@@ -1,0 +1,183 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+---------------------------------------------------------------
+
+
+Začneme tým, že si do RStudia importujeme dáta. Ide o surové textové dáta, takže to nie je žiadny problém. Zvolíme import dát, zadáme cestu a prenesieme do nášho kódu:
+
+```{r}
+hygdata_v3 <- read.csv("~/GitHub/HYG-Database/hygdata_v3.csv")
+View(hygdata_v3)
+```
+
+Teraz už s nimi môžeme pracovať, najprv sa však pozrieme, ako sú usporiadané.
+
+```{r}
+head(hygdata_v3)
+```
+
+  Môžeme si všimnúť, že ide o pomerne komplexné dáta, ktoré sú bohaté okrem zaradenia do rôznych astronomických katalógov aj na údaje o relatívnej polohe a rýchlosti týchto vesmírnych objektov, ako aj o ich svietivosti a podobne. Máme teda na výber množstvo súvislostí, ktoré môžeme odhaľovať medzi jednotlivými parametrami.
+
+  Našou úplne prvou úlohou bude pozrieť sa, ako sú naše dáta v súbore rozdelené. Nebudeme sa trápiť s vykresľovaním jednotlivých charakteristík, radšej použijeme nástroje, ktoré sú v R už vbudované (summary). Zároveň by bolo ale fajn otestovať nedokonalosti v dátach, a ďalšiu informáciu nám môže poskytnúť aj modus, ktorý v bežnom summary nie je prítomný, a tak si ho pripravíme zvlášť a aplikujeme spolu so summary na naše dáta.
+
+```{r}
+print(summary(hygdata_v3))
+```
+
+  Ak si pozorne prezrieme zobrazené charakteristiky, môžeme si všimnúť, že v niektorých položkách sú prítomné outlieri. Keďže však ide o reálne objekty s objektívnymi vlastnosťami, nebudeme ich zatiaľ vyradzovať (napríklad lum - svietivosť ako násobok svietivosti Slnka). Určite však budeme musieť upraviť veľmi dôležitú položku dist - teda vzdialenosť hviezdy získanú na základe jej paralaxy (relatívnej zmeny polohy kvôli pozorovaniu z dvoch protiľahlých miest na obežnej dráhe Slnka). Ako si môžeme všimnúť, tretí kvartil zasahuje hlboko pod maximálnu hodnotu súboru. Keď sa pozrieme na modus tohto spojitého súboru, zistíme, že je to práve táto maximálna hodnota. Táto maximálna presná hodnota v spojitom spektre je dosť podozrivá:
+
+```{r}
+modus <- function(v) 
+{
+   uniqv <- unique(v)
+   uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+modus(hygdata_v3[,10])
+hist(hygdata_v3[,10],xlab = "vzdialenosť(získaná pomocou paralaxy)",ylab = "počet výskytov",col = "darkblue",border = "blue")
+```
+
+  Aha naozaj. Nájsť modus v spojitom súbore dát väčšinou znamená nejakú špecifickú vlastnosť značenia a histogram to potvrdzuje. V tomto bode si teda ešte raz prezrieme readme ku našej databáze. Naozaj. hodnota 100 000 znamená, že dáta chýbajú, alebo sú pochybné. Očistime naše dáta od tohoto znečistenia a pozrime sa na početnosti.
+
+```{r}
+library(tidyverse)
+purified_1 <- filter(hygdata_v3,dist<=50000)
+rest_1 <- filter(hygdata_v3, dist > 50000)
+hist(purified_1[,10],xlab = "vzdialenosť(získaná pomocou paralaxy)",ylab = "počet výskytov",col = "darkblue",border = "blue")
+hist(rest_1[,14],xlab = "magnitúda",ylab = "počet výskytov",col = "darkred",border = "gray")
+```
+
+  Začnime s niečím jednoduchým. Radi by sme dokázali, že magnitúda (zdanlivá jasnosť hviezd) bude rásť (jej reprezentujúca číslica) so vzdialenosťou (prirodzený predpoklad v prípade homogénneho prostredia). Vynesme si teda tieto dve veličiny do grafu.
+
+```{r}
+library(ggplot2)
+ggplot(data = purified_1) +
+geom_point(mapping = aes(x = dist, y = mag,size = 1/10^(mag),alpha = 1/100))
+```
+
+  Z takéhoto grafu až tak veľa informácií nezískame. Dáta by bolo fajn si utriediť do nejakých skupín, a až takéto skupiny zobrazovať (a prípadne nastaviť vizuál podľa ich veľkostí). Poďme sa teda pustiť do našej prvej podúlohy - vyberme si z dát len zaujímavé položky a zoraďme ich podľa hodnoty.
+
+```{r}
+hygdata_1 <- select(purified_1, id, proper, dist, rv, mag, absmag, con, lum)
+hygdata_1
+```
+
+  Teraz sa pokúsime nejako regulovať počet údajov. Jednotlivé objekty podľa vzdialenosti a magnitúdy zatriedime do vhodného počtu skupín. Využijeme zoradenie objektov vzostupne podľa vzdialenosťi, vykreslenie príslušnosti do skupín a funkciu cut.
+
+```{r}
+dist
+kat <- cut(hygdata_1$dist, 40, include.lowest=TRUE)
+mutate(hygdata_1, kat)
+hygdata_1
+ggplot(data = hygdata_1) +
+geom_point(mapping = aes(x = kat, y = mag, size = 1/10^(mag), alpha = 1/100), )
+```
+
+  Ako si môžeme všimnúť, stále informačná hodnota takejto vizualizácie, nespĺňa naše požiadavky. Skúsime to inak: vizualizujme priamo závislosť vzdialenosti od magnitúry, ale príslušnosť ku jednotlivým vzialenostiam pre lepšiu prehľadnosť ofarbíme podľa rozdelenia spektra vzdialenosté do nastaviteľného počtu intervalov.
+
+```{r}
+hygdata_1
+kat <- cut(hygdata_1$dist, 25, include.lowest=TRUE, labels = FALSE)
+mutate(hygdata_1, kat)
+ggplot(data = hygdata_1) +
+geom_point(mapping = aes(x = dist, y = mag, size = 1/10^(mag), alpha = 1/100), colour = kat)
+```
+
+  Ako si môžeme všimnúť, vo funkcií cut sme použili labels = FALSE, pretože nechceme ručne zadávať potenciálne veľké množstvo názvov, ktoré nemajú informačnú hodnotu, len sú feed-om pre parameter colour pri kreslení grafu. To, že sme túto možnosť dali do kódu nám ale umožňuje voľne a nezáväzne adjustovať počet farebných hladín a počet "chlievikov", ktoré zobrazujeme - vlastne to používame ako taký "kvázihistogram" - vidíme takto na našom grafe početnosti. Táto funkcia to delí na rovnaké podintervaly. Nám by pre vizualizáciu možno pomohlo, keby to delíme na kúsky s rovnakým počtom vzoriek - tak by sme získali informáciu o rozdelení našich dát a bolo by toto rozdelenie krásne vidno. Teraz sa to pokúsime spraviť. Hľadali sme možnosti až sme došli k jednoduchej variante príkazu cut, a to cut_number:
+
+```{r}
+hygdata_1
+kat <- cut_number(hygdata_1$dist, 20 , labels = FALSE)
+mutate(hygdata_1, kat)
+ggplot(data = hygdata_1) +
+geom_point(mapping = aes(x = dist, y = mag, size = 1/1.1^(mag), alpha = 1/1000), colour = kat)
+```
+
+  Teraz už sú dáta zobrazené pomerne prehľadne. Môžeme teda usúdiť, že náš predpoklad sa nepotvrdil. Vecou, ktorá je vďaka tejto vizualizácií najzrejmejšia, je rozdiel počtov hviezd v databáze pre jednotlivé vzdialenosti. Šírka stĺpcu (chlievika), ktorý obsahuje fixný počet hviezd sa so stúpajúcou vzdialenosťou zväčšuje - nie sme schopní detekovať všetky hviezdy (za predpokladu relatívnej homogenity rozmiestenenia hviezd vo vesmíre).
+  Druhým viditeľným poznatkom je, že do vzdialenosti asi 50 parsekov sme schopní zachytiť aj objekty s veľmi malou zdanlivou magnitúdou. Potom ale počet takýchto objektov v databáze exponenciálne klesá. Tento pokles nie je spôsobený tým, že by vo vzdialenejších častiach menej jasné objekty neboli, ale tým, že ich nie sme schopní detekovať. V našej databáze teda tieto objekty nie sú.
+  Teda ako to už býva, náš jednoduchý predpoklad "so stúpajúcou vzdialenosťou stúpa číslo magnitúdy" musíme korigovať ako "so stúpajúcou vzdialenosťou sme schopní zachytiť čoraz menej hviezd a žiadne s príliš veľkou magnitúdou (nízkou zdanlivou jasnosťou)".
+
+  Druhým cieľom, ktorý by sme chceli splniť, je vykreslenie tvaru súhvezdí na oblohe podľa ich súradníc. Na takýto komplexnejšií problém využijeme fazety a identifikáciu podľa stĺpca con (skratka pre constellation). V prvom rade si z nášho komplexného dátového súboru vyberieme len položky, ktoré sú pre nás zaujímavé. Budeme postupovať analogicky ako v prvej časti.
+
+```{r}
+hygdata_2 <- select(hygdata_v3, id, proper, mag, con, x, y, z, vx, vy, vz, rarad, decrad, pmrarad, pmdecrad)
+hygdata_2 <- filter(hygdata_2,con!="")
+```
+Poďme sa pozrieť na rozdelenia jednotlivých súradníc - na základe tohoto sa rozhodneme, ktorú metódu vizualizácie zvolíme. Zároveň sa poďme pozrieť, koľko hodnôt môže nadobúdať kategorická premenná con - koľko je súhvezdí?
+
+```{r}
+library(ggplot2)
+ggplot(data.frame(hygdata_2$con), aes(x=hygdata_2$con), colour = hygdata_2$con ) +
+  geom_bar()
+```
+
+Ako môžeme vidieť, Súhvezdí je trochu moc, aby sme ich mohli všetky vykresliť. Vyberieme si teda len niektoré z nich a tejto vzorke sa budeme venovať. Samozrejme, v prípade záujmu by sme nasledujúce postupy mohli použiť aj na iných ľubovoľných súhvezdiach. Poďme sa pozrieť na počty hviezd v niektorých súhvezdiach / zvoľme napríklad Pisces - Ryby a Leo - lev. 
+
+```{r}
+hygdata_2Psc<-filter(hygdata_2, con =="Psc") 
+hist(hygdata_2Psc[,3],xlab = "magnitúda",ylab = "počet výskytov",col = "darkred",border = "gray")
+hygdata_2Leo<-filter(hygdata_2, con=="Leo") 
+hist(hygdata_2Leo[,3],xlab = "magnitúda",ylab = "počet výskytov",col = "darkblue",border = "gray")
+```
+
+Ako vidíme, počty hviezd v jednotlivých súhvezdiach sú vyššie, ako by bolo možné prehľadne zobraziť. Poďme teda odfiltrovať hviezdy, ktoré nie sú viditeľné voľným okom. Uvádza sa, že voľným okom je možné vidieť objekty s veľkosťou okolo 6 magnitúdy (http://dust.ess.uci.edu/ppr/ppr_Wea47.pdf). Použime tento predpoklad a odfiltrujme hviezdy, ktoré nie sú viditeľné voľným okom (po optimalizácií sme zvolili ešte nižšiu hodnotu magnitúdy cutoff):
+
+```{r}
+hygdata_2
+hygdata_2_vi <- filter(hygdata_2, mag<4.5)
+hygdata_2_vi
+```
+
+A môžeme začať vykresľovať! Samozrejme, ešte zvoľme, ktoré súhvezdia vykreslíme. Tak spravme túto úlohu pre 12 znamení zverokruhu:
+
+```{r}
+hygdata_2_vi
+hygdata_2_vi_z <- filter(hygdata_2_vi, con =="Ari"|con =="Tau"|con =="Gem"|con =="Cnc"|con =="Leo"|con =="Vir"|con =="Lib"|con =="Sco"|con =="Sgr"|con =="Aqr"|con =="Psc"|con =="Cap")
+hygdata_2_vi_z
+```
+
+A teraz už naozaj môžeme začať vykresľovať. Skúsme, ako to vôbec bude vyzerať pre jedno súhvezdie (dobre identifikovateľný Leo). Vykresľujeme jednotlivé súhvezdia podľa ich súradníc na nebeskej klenbe (najprv sme experimentovali s x, y a z súradnicami až pokým sme si neuvedomili ich význam v tejto databáze). Takto sú charakteristické tvary viditeľné:
+
+```{r}
+hygdata_2_vi_leo <- filter(hygdata_2_vi_z, con =="Leo")
+ggplot(data = hygdata_2_vi_leo) +
+  geom_point(mapping = aes(x = hygdata_2_vi_leo$rarad, y = hygdata_2_vi_leo$decrad, size = 1/1.01^(hygdata_2_vi_leo$mag), alpha = 1))
+```
+
+Naozaj to funguje. Tvar súhvezdia, ktorý je bežne zobrazovaný, je zrkadlovo prevrátený (https://upload.wikimedia.org/wikipedia/commons/5/56/Leo_IAU.svg), ale v podstate ide o ten istý obrazec, teda sa nám podarilo vizualizovať jedno súhvezdie.
+Skúsme to spraviť pre všetky zvolené súhvezdia zo znamení zverokruhu. Ak volíme fazetové zobrazenie, je nutné nastaviť parameter scales ako voľný, pretože inak by sme nevideli nič (zlá mierka).
+
+```{r}
+hygdata_2_vi_z
+ggplot(data = hygdata_2_vi_z) +
+  geom_point(mapping = aes(x = hygdata_2_vi_z$rarad, y = hygdata_2_vi_z$decrad, size = 1/100^(hygdata_2_vi_z$mag), alpha = 1), colour = "black", background=2) + 
+facet_wrap(~con,scales = "free") + theme(panel.background = element_rect(fill = 'white', colour = 'white'))
+```
+
+  Niektoré súhvezdia sú rozpoznateľné lepšie, iné horšie. Dalo by sa to zlepšiť napríklad iným nastavením filtračného parametra magnitúdy pre každé súhvezdie, podľa počtu hviezd. Niektoré súhvezdia totiž obsahujú aj hviezdy s menšou magnitúdou, ktoré sú ale význačné pre identifikáciu tvaru.
+  My sa však ešte pozrieme na ďalšiu charakteristiku. Pozrieme sa, ako budú tieto súhvezdia vyzerať o 10 000 rokov. Takýto posun môžeme vizualizovať na základe radiálnych rýchlostí za rok, ktoré sú taktiež prítomné v databáze. Takže využime funkcie balíka dplyr:
+
+```{r}
+hygdata_2_vi_z
+hygdata_2_vi_z <- (mutate(hygdata_2_vi_z, rarad_10k = 100000*pmrarad + rarad, decrad_10k = 100000*pmdecrad + decrad ))
+```
+
+
+  Teraz už zostáva tvar súhvezdí o 100 000 rokov len vykresliť. (nezabúdame, že je to pri uvažovanej konštantnej rýchlosti pohybu ako aj magnitúde, čo nie je pravidlom):
+
+
+```{r}
+hygdata_2_vi_z
+ggplot(data = hygdata_2_vi_z) +
+  geom_point(mapping = aes(x = hygdata_2_vi_z$rarad_10k, y = hygdata_2_vi_z$decrad_10k, size = 1/10^(hygdata_2_vi_z$mag), alpha = 1), colour = "black", background=2) + 
+facet_wrap(~con,scales = "free") + theme(panel.background = element_rect(fill = 'white', colour = 'white'))
+```
+
+  Takto budú naše súhvezdia vyzerať o 100 000 rokov. Tvar niektorých zostane ešte rozpoznateľný, zatiaľ čo u iných bude deformovaný. (Pri parametri 1 000 000 rokov už sú súhvezdia nerozpoznateľné)
+
+  V tejto práci sme sa pokúsili využiť programovací jazyk R na organizáciu a vizualizáciu dát. Zamerali sme sa práve na tieto dve oblasti, pretože ide o najčastejšie používané typy práce s dátami. 
+  V prvom našom konkrétnom prípade sme formulovali hypotézu o vzťahu magnitúdy a vzdialenosti hviezdy, ktorú sme po preusporiadaní dát a ich vykreslení upravili. Dokázali sme tak, že vizualizácia a organizácia dát je veľmi dôležitá pre sformulovanie/potvrdenie/vyvrátenie vedeckej hypotézy.
+  V druhej skôr zábavnej časti sme sa venovali vykresľovaniu zdanlivej polohy hviezd na oblohe podľa súhvezdí. Zredukovali sme výstupy z databázy, čo nám umožnilo rozumne vizualizovať dáta. Pridanou hodnotou bola prognóza, ktorá snáď budúcim astronómom uľahčí orientáciu na oblohe. :) 
+  Metódy by bolo možné zlepšiť použitím komplexnejších postupov. 
+  
